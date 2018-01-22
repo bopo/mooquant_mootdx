@@ -210,7 +210,7 @@ class TradesAPIThread(PollingThread):
                                 'ask': float(best_ask['price'])
                             }
                         ))
-            except api.BitfinexError as e:
+            except api.mootdxError as e:
                 logger.error(e)
 
 

@@ -29,7 +29,7 @@ from mooquant_mootdx import common
 class BacktestingBroker(backtesting.Broker):
     MIN_TRADE_USD = 5
 
-    """A Bitfinex backtesting broker.
+    """A mootdx backtesting broker.
 
     :param cash: The initial amount of cash.
     :type cash: int/float.
@@ -54,7 +54,7 @@ class BacktestingBroker(backtesting.Broker):
 
     def submitOrder(self, order):
         if order.isInitial():
-            # Override user settings based on Bitfinex limitations.
+            # Override user settings based on mootdx limitations.
             order.setAllOrNone(False)
             order.setGoodTillCanceled(True)
         return backtesting.Broker.submitOrder(self, order)
@@ -97,7 +97,7 @@ class BacktestingBroker(backtesting.Broker):
 
 
 class PaperTradingBroker(BacktestingBroker):
-    """A Bitfinex paper trading broker.
+    """A mootdx paper trading broker.
 
     :param cash: The initial amount of cash.
     :type cash: int/float.

@@ -26,7 +26,7 @@ import urllib.parse
 import json
 
 
-class BitfinexError(Exception):
+class mootdxError(Exception):
     def __init__(self, message, response):
         Exception.__init__(self, message)
 
@@ -43,7 +43,7 @@ def get_trades(currency_pair):
     try:
         ret = json_http_request(url)
     except:
-        raise BitfinexError('Problem fetching trades')
+        raise mootdxError('Problem fetching trades')
     
     return ret
 
@@ -54,6 +54,6 @@ def get_orderbook(currency_pair):
     try:
         ret = json_http_request(url)
     except:
-        raise BitfinexError('Problem fetching trades')
+        raise mootdxError('Problem fetching trades')
     
     return ret
