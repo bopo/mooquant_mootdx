@@ -1,4 +1,4 @@
-# PyAlgoTrade BitFinex module
+# PyAlgoTrade MooTDX module
 #
 # Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
 #
@@ -25,8 +25,10 @@ import urllib.error
 import urllib.parse
 import json
 
+from mootdx.reader import Reader, ExReader
+from mootdx.quotes import Quotes, ExQuotes
 
-class mootdxError(Exception):
+class MooTdxError(Exception):
     def __init__(self, message, response):
         Exception.__init__(self, message)
 
@@ -38,22 +40,23 @@ def json_http_request(url):
 
 
 def get_trades(currency_pair):
-    url = "https://api.bitfinex.com/v1/trades/{}".format(currency_pair)
+    url = "https://api.mootdx.com/v1/trades/{}".format(currency_pair)
+    self.reader = Reader(tdxdir='/Volumes/BOOTCAMP/new_tdx')
     
     try:
         ret = json_http_request(url)
     except:
-        raise mootdxError('Problem fetching trades')
+        raise MooTdxError('Problem fetching trades')
     
     return ret
 
 
 def get_orderbook(currency_pair):
-    url = "https://api.bitfinex.com/v1/book/{}".format(currency_pair)
+    url = "https://api.mootdx.com/v1/book/{}".format(currency_pair)
     
     try:
         ret = json_http_request(url)
     except:
-        raise mootdxError('Problem fetching trades')
+        raise MooTdxError('Problem fetching trades')
     
     return ret

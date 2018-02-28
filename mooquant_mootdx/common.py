@@ -1,4 +1,4 @@
-# MooQuant BitFinex module
+# MooQuant MooTDX module
 #
 # Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
 #
@@ -24,8 +24,8 @@ import mooquant.logger
 from mooquant import broker
 
 
-btc_symbol = "btcusd"
-logger = mooquant.logger.getLogger("bitfinex")
+btc_symbol = "600036"
+logger = mooquant.logger.getLogger("mootdx")
 
 
 class BTCTraits(broker.InstrumentTraits):

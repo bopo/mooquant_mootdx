@@ -1,4 +1,4 @@
-# MooQuant BitFinex module
+# MooQuant MooTDX module
 #
 # Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
 #
@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Modified from MooQuant bitfinex and Xignite modules
+# Modified from MooQuant mootdx and Xignite modules
 
 """
 .. moduleauthor:: Mikko Gozalo <mikgozalo@gmail.com>
@@ -34,7 +34,7 @@ from mooquant import observer
 from mooquant_mootdx import api
 
 
-logger = logger.getLogger("bitfinex")
+logger = logger.getLogger("mootdx")
 
 
 def utcnow():
@@ -142,6 +142,7 @@ class PollingThread(threading.Thread):
 
     def run(self):
         logger.info("Thread started")
+        
         while not self.__stopped:
             self.__wait()
             if not self.__stopped:
@@ -149,6 +150,7 @@ class PollingThread(threading.Thread):
                     self.doCall()
                 except Exception as e:
                     logger.critical("Unhandled exception", exc_info=e)
+        
         logger.debug("Thread finished.")
 
     # Must return a non-naive datetime.
@@ -172,6 +174,7 @@ class TradesAPIThread(PollingThread):
         self.__identifiers = identifiers
         self.__frequency = bar.Frequency.TRADE
         self.__apiCallDelay = apiCallDelay
+        
         self.last_tid = 0
         self.last_orderbook_ts = 0
 
@@ -181,8 +184,10 @@ class TradesAPIThread(PollingThread):
     def doCall(self):
         for identifier in self.__identifiers:
             try:
+                
                 trades = api.get_trades(identifier)
                 trades.reverse()
+
                 for barDict in trades:
                     bar = {}
                     trade = TradeBar(barDict)
@@ -193,7 +198,9 @@ class TradesAPIThread(PollingThread):
                         self.__queue.put((
                             TradesAPIThread.ON_TRADE, bar
                         ))
+                
                 orders = api.get_orderbook(identifier)
+                
                 if len(orders['bids']) and len(orders['asks']):
                     best_ask = orders['asks'][0]
                     best_bid = orders['bids'][0]
@@ -226,6 +233,7 @@ class LiveFeed(barfeed.BaseBarFeed):
     ):
         logger.info('Livefeed created')
         barfeed.BaseBarFeed.__init__(self, bar.Frequency.TRADE, maxLen)
+        
         if not isinstance(identifiers, list):
             raise Exception("identifiers must be a list")
 
@@ -236,7 +244,9 @@ class LiveFeed(barfeed.BaseBarFeed):
             identifiers,
             datetime.timedelta(seconds=apiCallDelay)
         )
+        
         self.__bars = []
+        
         for instrument in identifiers:
             self.registerInstrument(instrument)
 
@@ -244,6 +254,7 @@ class LiveFeed(barfeed.BaseBarFeed):
     def start(self):
         if self.__thread.is_alive():
             raise Exception("Already strated")
+        
         self.__thread.start()
 
     def stop(self):
@@ -279,6 +290,7 @@ class LiveFeed(barfeed.BaseBarFeed):
 
     def __dispatchImpl(self, eventFilter):
         ret = False
+        
         try:
             eventType, eventData = self.__queue.get(
                 True, LiveFeed.QUEUE_TIMEOUT

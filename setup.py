@@ -13,9 +13,9 @@ from mooquant_mootdx import __version__
 with open('README.md') as readme_file:
     readme = readme_file.read()
 
-requirements = ['mooquant',]
-test_requirements = ['mooquant', 'pytest',]
-setup_requirements = ['mooquant',]
+requirements = ['mooquant', 'mootdx']
+test_requirements = ['mooquant', 'mootdx', 'pytest',]
+setup_requirements = ['mooquant', 'mootdx']
 
 setup(
     name='mooquant_mootdx',

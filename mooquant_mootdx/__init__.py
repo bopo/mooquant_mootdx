@@ -1,4 +1,4 @@
-# PyAlgoTrade BitFinex module
+# PyAlgoTrade MooTDX module
 #
 # Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
 #

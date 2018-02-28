@@ -1,4 +1,4 @@
-# MooQuant BitFinex module
+# MooQuant MooTDX module
 #
 # Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
 #
@@ -57,6 +57,7 @@ class BacktestingBroker(backtesting.Broker):
             # Override user settings based on mootdx limitations.
             order.setAllOrNone(False)
             order.setGoodTillCanceled(True)
+        
         return backtesting.Broker.submitOrder(self, order)
 
     def createMarketOrder(self, action, instrument, quantity, onClose=False):
