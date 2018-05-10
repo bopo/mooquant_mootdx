@@ -10,5 +10,6 @@ class TestQuotes(unittest.TestCase):
         data = get_quotes('600036')
         self.assertTrue(data is not None)
 
+
 if __name__ == '__main__':
     unittest.main()

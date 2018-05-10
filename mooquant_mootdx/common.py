@@ -23,7 +23,6 @@
 import mooquant.logger
 from mooquant import broker
 
-
 btc_symbol = "600036"
 logger = mooquant.logger.getLogger("mootdx")
 

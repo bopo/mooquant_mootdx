@@ -14,7 +14,7 @@ with open('README.md') as readme_file:
     readme = readme_file.read()
 
 requirements = ['mooquant', 'mootdx']
-test_requirements = ['mooquant', 'mootdx', 'pytest',]
+test_requirements = ['mooquant', 'mootdx', 'pytest', ]
 setup_requirements = ['mooquant', 'mootdx']
 
 setup(
@@ -25,7 +25,7 @@ setup(
     author="bopo.wang",
     author_email='ibopo@126.com',
     url='https://github.com/bopo/mooquant_mootdx',
-    packages=find_packages(include=['mooquant_mootdx','mooquant_mootdx.*']),
+    packages=find_packages(include=['mooquant_mootdx', 'mooquant_mootdx.*']),
     include_package_data=True,
     install_requires=requirements,
     license="MIT license",

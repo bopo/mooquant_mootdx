@@ -20,7 +20,6 @@
 .. moduleauthor:: Mikko Gozalo <mikgozalo@gmail.com>
 """
 
-
 from mooquant import broker
 from mooquant.broker import backtesting
 from mooquant_mootdx import common
@@ -57,7 +56,7 @@ class BacktestingBroker(backtesting.Broker):
             # Override user settings based on mootdx limitations.
             order.setAllOrNone(False)
             order.setGoodTillCanceled(True)
-        
+
         return backtesting.Broker.submitOrder(self, order)
 
     def createMarketOrder(self, action, instrument, quantity, onClose=False):
@@ -73,7 +72,9 @@ class BacktestingBroker(backtesting.Broker):
             action = broker.Order.Action.SELL
 
         if limitPrice * quantity < BacktestingBroker.MIN_TRADE_USD:
-            raise Exception("Trade must be >= %s" % (BacktestingBroker.MIN_TRADE_USD))
+            raise Exception(
+                "Trade must be >= %s" %
+                (BacktestingBroker.MIN_TRADE_USD))
 
         if action == broker.Order.Action.BUY:
             # Check that there is enough cash.
@@ -88,12 +89,19 @@ class BacktestingBroker(backtesting.Broker):
         else:
             raise Exception("Only BUY/SELL orders are supported")
 
-        return backtesting.Broker.createLimitOrder(self, action, instrument, limitPrice, quantity)
+        return backtesting.Broker.createLimitOrder(
+            self, action, instrument, limitPrice, quantity)
 
     def createStopOrder(self, action, instrument, stopPrice, quantity):
         raise Exception("Stop orders are not supported")
 
-    def createStopLimitOrder(self, action, instrument, stopPrice, limitPrice, quantity):
+    def createStopLimitOrder(
+            self,
+            action,
+            instrument,
+            stopPrice,
+            limitPrice,
+            quantity):
         raise Exception("Stop limit orders are not supported")
 
 

@@ -19,28 +19,32 @@
 """
 .. moduleauthor:: Mikko Gozalo <mikgozalo@gmail.com>
 """
-from mootdx import reader, quotes
+from mootdx import quotes, reader
+
 
 class MooTdxError(Exception):
     def __init__(self, message, response):
         Exception.__init__(self, message)
 
+
 def get_quotes(currency_pair, category=9, offset=10):
-    
     try:
         client = quotes.Quotes()
-        result = client.bars(symbol=currency_pair, category=category, offset=offset)
-    except:
+        result = client.bars(
+            symbol=currency_pair,
+            category=category,
+            offset=offset)
+    except BaseException:
         raise MooTdxError('Problem fetching quotes')
-    
+
     return result
 
+
 def get_reader(currency_pair):
-    
     try:
         client = reader.Reader(tdxdir='/Volumes/BOOTCAMP/new_tdx')
         result = client.daily(symbol='600036')
-    except:
+    except BaseException:
         raise MooTdxError('Problem fetching readers')
-    
+
     return result
