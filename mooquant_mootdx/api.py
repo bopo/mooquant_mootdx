@@ -19,44 +19,28 @@
 """
 .. moduleauthor:: Mikko Gozalo <mikgozalo@gmail.com>
 """
-
-import urllib.request
-import urllib.error
-import urllib.parse
-import json
-
-from mootdx.reader import Reader, ExReader
-from mootdx.quotes import Quotes, ExQuotes
+from mootdx import reader, quotes
 
 class MooTdxError(Exception):
     def __init__(self, message, response):
         Exception.__init__(self, message)
 
-
-def json_http_request(url):
-    f = urllib.request.urlopen(url)
-    response = f.read()
-    return json.loads(response)
-
-
-def get_trades(currency_pair):
-    url = "https://api.mootdx.com/v1/trades/{}".format(currency_pair)
-    self.reader = Reader(tdxdir='/Volumes/BOOTCAMP/new_tdx')
+def get_quotes(currency_pair, category=9, offset=10):
     
     try:
-        ret = json_http_request(url)
+        client = quotes.Quotes()
+        result = client.bars(symbol=currency_pair, category=category, offset=offset)
     except:
-        raise MooTdxError('Problem fetching trades')
+        raise MooTdxError('Problem fetching quotes')
     
-    return ret
+    return result
 
-
-def get_orderbook(currency_pair):
-    url = "https://api.mootdx.com/v1/book/{}".format(currency_pair)
+def get_reader(currency_pair):
     
     try:
-        ret = json_http_request(url)
+        client = reader.Reader(tdxdir='/Volumes/BOOTCAMP/new_tdx')
+        result = client.daily(symbol='600036')
     except:
-        raise MooTdxError('Problem fetching trades')
+        raise MooTdxError('Problem fetching readers')
     
-    return ret
+    return result
