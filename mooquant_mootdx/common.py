@@ -23,10 +23,34 @@
 import mooquant.logger
 from mooquant import broker
 
-btc_symbol = "600036"
 logger = mooquant.logger.getLogger("mootdx")
 
 
-class BTCTraits(broker.InstrumentTraits):
-    def roundQuantity(self, quantity):
-        return round(quantity, 8)
+from mootdx import quotes, reader
+
+
+class MooTdxError(Exception):
+    def __init__(self, message, response):
+        Exception.__init__(self, message)
+
+
+def get_quotes(currency_pair, category=9, offset=10):
+    try:
+        client = quotes.Quotes()
+        result = client.bars(
+            symbol=currency_pair,
+            category=category,
+            offset=offset)
+    except BaseException:
+        raise MooTdxError('Problem fetching quotes')
+
+    return result
+
+
+def get_reader(currency_pair):
+    try:
+        client = reader.Reader(tdxdir='/Volumes/BOOTCAMP/new_tdx')
+        result = client.daily(symbol='600036')
+    except BaseException:
+        raise MooTdxError('Problem fetching readers')
+

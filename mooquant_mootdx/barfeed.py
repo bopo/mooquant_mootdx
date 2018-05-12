@@ -22,15 +22,15 @@ import threading
 import time
 from collections import deque
 
-import mooquant.logger
 import pytz
 import tushare as ts
-from mooquant import bar
-from mooquant import barfeed, dataseries, resamplebase
+from pandas.tseries import holiday
+
+import mooquant.logger
+from mooquant import bar, barfeed, dataseries, resamplebase
 from mooquant.bar import Frequency
 from mooquant.provider.xignite.barfeed import utcnow
 from mooquant.utils import dt
-from pandas.tseries import holiday
 
 logger = mooquant.logger.getLogger("tushare")
 
