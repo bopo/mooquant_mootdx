@@ -1,133 +1,180 @@
-# MooQuant MooTDX module
+# -*- coding: utf-8 -*-
+# MooQuant
 #
-# Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
+# Copyright 2017 bopo.wang<ibopo@126.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+#    http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Modified from MooQuant mootdx and Xignite modules
 
 """
-.. moduleauthor:: Mikko Gozalo <mikgozalo@gmail.com>
+.. moduleauthor:: bopo.wang <ibopo@126.com>
 """
 
 import datetime
 import queue
 import threading
 import time
+from collections import deque
 
-from mooquant import bar, barfeed, dataseries, logger, observer
+import mooquant.logger
+import pytz
+from mooquant import bar, barfeed, dataseries, resamplebase
+from mooquant.bar import Frequency
 from mooquant.utils import dt
-from mooquant_mootdx import api
 
-logger = logger.getLogger("mootdx")
+from mooquant_mootdx.common import utcnow
 
-
-def utcnow():
-    return dt.as_utc(datetime.datetime.utcnow())
+logger = mooquant.logger.getLogger("mootdx")
 
 
-class TradeBar(bar.Bar):
-    __slots__ = ('__dateTime', '__tradeId', '__price', '__amount', '__type')
+def to_market_datetime(dateTime):
+    timezone = pytz.timezone('Asia/Shanghai')
+    return dt.localize(dateTime, timezone)
 
-    last_datetime = None
 
-    def __init__(self, bardict):
-        trade_dt = datetime.datetime.fromtimestamp(bardict['timestamp'])
-        if TradeBar.last_datetime is not None:
-            if trade_dt <= TradeBar.last_datetime:
-                trade_dt = (
-                    TradeBar.last_datetime +
-                    datetime.timedelta(seconds=0.01)
-                )
+class TickDataSeries(object):
+    def __init__(self):
+        self.__priceDS = deque()
+        self.__volumeDS = deque()
+        self.__amountDS = deque()
+        self.__dateTimes = deque()  # just for debug
 
-        TradeBar.last_datetime = trade_dt
-        self.__dateTime = trade_dt
-        self.__tradeId = bardict['tid']
-        self.__price = float(bardict['price'])
-        self.__amount = float(bardict['amount'])
-        self.__type = bardict['type']
+    def reset(self):
+        self.__priceDS.clear()
+        self.__volumeDS.clear()
+        self.__amountDS.clear()
+        self.__dateTimes.clear()
 
-    def __setstate__(self, state):
-        (
-            self.__dateTime,
-            self.__tradeId,
-            self.__price,
-            self.__amount,
-            self.__type
-        ) = state
+    def getPriceDS(self):
+        return self.__priceDS
 
-    def __getstate__(self):
-        return (
-            self.__dateTime,
-            self.__tradeId,
-            self.__price,
-            self.__amount,
-            self.__type
-        )
+    def getAmountDS(self):
+        return self.__amountDS
 
-    def setUseAdjustedValue(self, useAdjusted):
-        if useAdjusted:
-            raise Exception("Adjusted close is not available")
+    def getVolumeDS(self):
+        return self.__volumeDS
 
-    def getTradeId(self):
-        return self.__tradeId
+    def getDateTimes(self):
+        return self.__dateTimes
 
-    def getType(self):
-        return self.__type
+    def append(self, price, volume, amount, dateTime):
+        assert (bar is not None)
 
-    def getFrequency(self):
-        return bar.Frequency.TRADE
+        self.__priceDS.append(price)
+        self.__volumeDS.append(volume)
+        self.__amountDS.append(amount)
+        self.__dateTimes.append(dateTime)
 
-    def getDateTime(self):
-        return self.__dateTime
+    def empty(self):
+        return len(self.__priceDS) == 0
 
-    def getOpen(self, adjusted=False):
-        return self.__price
 
-    def getHigh(self, adjusted=False):
-        return self.__price
+def get_trading_days(start_day, days):
+    try:
+        df = ts.get_hist_data('sh')
+    except Exception as e:
+        logger.error("Tushare get hist data exception", exc_info=e)
+        return []
 
-    def getLow(self, adjusted=False):
-        return self.__price
+    trading_days = list()
+    holiday = 0
 
-    def getClose(self, adjusted=False):
-        return self.__price
+    for i in range(days):
+        while True:
+            day = start_day - datetime.timedelta(days=i + 1 + holiday)
+            if day.date().isoformat() in df.index:
+                trading_days.append(day)
+                break
+            else:
+                holiday += 1
 
-    def getVolume(self):
-        return self.__amount
+    trading_days.reverse()  # oldest date is put to head
 
-    def getAdjClose(self):
-        return None
+    return trading_days
 
-    def getTypicalPrice(self):
-        return self.__price
 
-    def getPrice(self):
-        return self.__price
+def build_bar(dateTime, ds):
+    prices = ds.getPriceDS()
+    volumes = ds.getVolumeDS()
+    amounts = ds.getAmountDS()
 
-    def getUseAdjValue(self):
-        return False
+    open_ = float(prices[0])
+    close = float(prices[-1])
+    high = float(max(prices))
+    low = float(min(prices))
+
+    volume = sum(int(v) for v in volumes)
+    amount = sum(float(a) for a in amounts)
+
+    return bar.BasicBar(dateTime, open_, high, low, close, volume, None, Frequency.DAY, amount)
 
 
 class PollingThread(threading.Thread):
-    def __init__(self):
-        threading.Thread.__init__(self)
+    # Not using xignite polling thread is because two underscores functions can't be override, e.g. __wait()
+
+    TUSHARE_INQUERY_PERIOD = 3  # tushare read period, default is 3s
+
+    def __init__(self, identifiers):
+        super(PollingThread, self).__init__()
+        self._identifiers = identifiers
+        self._tickDSDict = {}
+        self._last_quotation_time = {}
+
+        for identifier in self._identifiers:
+            self._tickDSDict[identifier] = TickDataSeries()
+            self._last_quotation_time[identifier] = None
+
         self.__stopped = False
 
     def __wait(self):
+        # first reset ticks info in one cycle, maybe we need save it if NO quotation in this period
+        for identifier in self._identifiers:
+            self._tickDSDict[identifier].reset()
+
         nextCall = self.getNextCallDateTime()
+
         while not self.__stopped and utcnow() < nextCall:
-            time.sleep(0.5)
+            start_time = datetime.datetime.now()
+
+            self.get_tushare_tick_data()
+
+            end_time = datetime.datetime.now()
+            time_diff = (end_time - start_time).seconds
+
+            if time_diff < PollingThread.TUSHARE_INQUERY_PERIOD:
+                time.sleep(PollingThread.TUSHARE_INQUERY_PERIOD - time_diff)
+
+    def valid_tick_data(self, identifier, tick_info):
+        if self._last_quotation_time[identifier] is None or \
+                self._last_quotation_time[identifier] < tick_info.time:
+            self._last_quotation_time[identifier] = tick_info.time
+        else:
+            return False
+
+        return float(tick_info.pre_close) * 0.9 <= float(tick_info.price) <= float(tick_info.pre_close) * 1.1
+
+    def get_tushare_tick_data(self):
+        try:
+            df = ts.get_realtime_quotes(self._identifiers)
+
+            for index, identifier in enumerate(self._identifiers):
+                tick_info = df.ix[index]
+
+                if self.valid_tick_data(identifier, tick_info):
+                    # tushare use unicode type, another way is convert it to int/float here. refer to build_bar
+                    self._tickDSDict[identifier].append(tick_info.price, tick_info.volume, tick_info.amount,
+                                                        tick_info.time)
+        except Exception as e:
+            logger.error("Tushare polling exception", exc_info=e)
 
     def stop(self):
         self.__stopped = True
@@ -136,8 +183,7 @@ class PollingThread(threading.Thread):
         return self.__stopped
 
     def run(self):
-        logger.info("Thread started")
-
+        logger.debug("Thread started.")
         while not self.__stopped:
             self.__wait()
             if not self.__stopped:
@@ -145,7 +191,6 @@ class PollingThread(threading.Thread):
                     self.doCall()
                 except Exception as e:
                     logger.critical("Unhandled exception", exc_info=e)
-
         logger.debug("Thread finished.")
 
     # Must return a non-naive datetime.
@@ -156,90 +201,85 @@ class PollingThread(threading.Thread):
         raise NotImplementedError()
 
 
-class TradesAPIThread(PollingThread):
+class LiveFeedThread(PollingThread):
     # Events
-    ON_TRADE = 1
-    ON_ORDER_BOOK_UPDATE = 2
+    ON_BARS = 1
 
-    def __init__(self, queue, identifiers, apiCallDelay):
-        PollingThread.__init__(self)
-
+    def __init__(self, queue, identifiers, frequency):
+        super(LiveFeedThread, self).__init__(identifiers)
         self.__queue = queue
-        self.__identifiers = identifiers
-        self.__frequency = bar.Frequency.TRADE
-        self.__apiCallDelay = apiCallDelay
+        self.__frequency = frequency
+        self.__updateNextBarClose()
 
-        self.last_tid = 0
-        self.last_orderbook_ts = 0
+    def __updateNextBarClose(self):
+        self.__nextBarClose = resamplebase.build_range(utcnow(), self.__frequency).getEnding()
 
     def getNextCallDateTime(self):
-        return utcnow() + self.__apiCallDelay
+        return self.__nextBarClose
 
     def doCall(self):
-        for identifier in self.__identifiers:
+        endDateTime = self.__nextBarClose
+        self.__updateNextBarClose()
+        bar_dict = {}
+
+        for identifier in self._identifiers:
             try:
-
-                trades = api.get_trades(identifier)
-                trades.reverse()
-
-                for barDict in trades:
-                    bar = {}
-                    trade = TradeBar(barDict)
-                    bar[identifier] = trade
-                    tid = trade.getTradeId()
-                    if tid > self.last_tid:
-                        self.last_tid = tid
-                        self.__queue.put((
-                            TradesAPIThread.ON_TRADE, bar
-                        ))
-
-                orders = api.get_orderbook(identifier)
-
-                if len(orders['bids']) and len(orders['asks']):
-                    best_ask = orders['asks'][0]
-                    best_bid = orders['bids'][0]
-                    last_update = int(max(
-                        float(best_ask['timestamp']), float(best_bid['timestamp'])
-                    ))
-
-                    if last_update > self.last_orderbook_ts:
-                        self.last_orderbook_ts = last_update
-                        self.__queue.put((
-                            TradesAPIThread.ON_ORDER_BOOK_UPDATE,
-                            {
-                                'bid': float(best_bid['price']),
-                                'ask': float(best_ask['price'])
-                            }
-                        ))
-            except api.mootdxError as e:
+                if not self._tickDSDict[identifier].empty():
+                    bar_dict[identifier] = build_bar(to_market_datetime(endDateTime), self._tickDSDict[identifier])
+            except Exception as e:
                 logger.error(e)
+
+        if len(bar_dict):
+            bars = bar.Bars(bar_dict)
+            self.__queue.put((LiveFeedThread.ON_BARS, bars))
+
+
+def get_bar_list(df, frequency, date=None):
+    bar_list = []
+
+    end_time = df.ix[0].time
+    if date is None:
+        date = datetime.datetime.now()
+    slice_start_time = to_market_datetime(datetime.datetime(date.year, date.month, date.day, 9, 30, 0))
+
+    while slice_start_time.strftime("%H:%M:%S") < end_time:
+        slice_end_time = slice_start_time + datetime.timedelta(seconds=frequency)
+
+        ticks_slice = df.ix[(df.time < slice_end_time.strftime("%H:%M:%S")) &
+                            (df.time >= slice_start_time.strftime("%H:%M:%S"))]
+
+        if not ticks_slice.empty:
+            open_ = ticks_slice.price.get_values()[-1]
+            high = max(ticks_slice.price)
+            low = min(ticks_slice.price)
+            close = ticks_slice.price.get_values()[0]
+            volume = sum(ticks_slice.volume)
+            amount = sum(ticks_slice.amount)
+
+            bar_list.append(bar.BasicBar(slice_start_time, open_, high, low,
+                                         close, volume, 0, frequency, amount))
+        else:
+            bar_list.append(None)
+        slice_start_time = slice_end_time
+
+    return bar_list
 
 
 class LiveFeed(barfeed.BaseBarFeed):
     QUEUE_TIMEOUT = 0.01
 
-    def __init__(
-            self,
-            identifiers,
-            apiCallDelay=5,
-            maxLen=dataseries.DEFAULT_MAX_LEN
-    ):
-        logger.info('Livefeed created')
-        barfeed.BaseBarFeed.__init__(self, bar.Frequency.TRADE, maxLen)
-
+    def __init__(self, identifiers, frequency, maxLen=dataseries.DEFAULT_MAX_LEN, replayDays=-1):
+        barfeed.BaseBarFeed.__init__(self, frequency, maxLen)
         if not isinstance(identifiers, list):
             raise Exception("identifiers must be a list")
 
+        self.__identifiers = identifiers
+        self.__frequency = frequency
         self.__queue = queue.Queue()
-        self.__orderBookUpdateEvent = observer.Event()
-        self.__thread = TradesAPIThread(
-            self.__queue,
-            identifiers,
-            datetime.timedelta(seconds=apiCallDelay)
-        )
 
-        self.__bars = []
+        self.__fill_today_history_bars(replayDays)  # should run before polling thread start
 
+        self.__thread = LiveFeedThread(self.__queue, identifiers, frequency)
         for instrument in identifiers:
             self.registerInstrument(instrument)
 
@@ -248,6 +288,7 @@ class LiveFeed(barfeed.BaseBarFeed):
         if self.__thread.is_alive():
             raise Exception("Already strated")
 
+        # Start the thread that runs the client.
         self.__thread.start()
 
     def stop(self):
@@ -270,53 +311,82 @@ class LiveFeed(barfeed.BaseBarFeed):
     def barsHaveAdjClose(self):
         return False
 
-    def dispatch(self):
-        ret = False
-
-        if self.__dispatchImpl(None):
-            ret = True
-
-        if barfeed.BaseBarFeed.dispatch(self):
-            ret = True
-
-        return ret
-
-    def __dispatchImpl(self, eventFilter):
-        ret = False
-
+    def getNextBars(self):
+        ret = None
         try:
-            eventType, eventData = self.__queue.get(
-                True, LiveFeed.QUEUE_TIMEOUT
-            )
-            if eventFilter is not None and eventType not in eventFilter:
-                return False
-
-            ret = True
-
-            if eventType == TradesAPIThread.ON_TRADE:
-                self.__onTrade(eventData)
-            elif eventType == TradesAPIThread.ON_ORDER_BOOK_UPDATE:
-                self.__orderBookUpdateEvent.emit(eventData)
+            eventType, eventData = self.__queue.get(True, LiveFeed.QUEUE_TIMEOUT)
+            if eventType == LiveFeedThread.ON_BARS:
+                ret = eventData
             else:
-                ret = False
-                logger.error(
-                    "Invalid event received to dispatch: %s - %s" % (
-                        eventType, eventData
-                    )
-                )
+                logger.error("Invalid event received: %s - %s" % (eventType, eventData))
         except queue.Empty:
             pass
-
         return ret
 
-    def __onTrade(self, barData):
-        self.__bars.append(barData)
+    # TuShareLiveFeed own interface
+    def _fill_today_bars(self):
+        today = datetime.date.today().isoformat()
 
-    def getNextBars(self):
-        if len(self.__bars):
-            return bar.Bars(self.__bars.pop(0))
+        if ts.is_holiday(today):  # do nothing if holiday
+            return
+        elif datetime.date.today().weekday() in [5, 0]:
+            return
 
-        return None
+        #        #James:
+        #        if datetime.datetime.now().hour * 60 + 30 < 9*60 + 30:
+        #            return
 
-    def getOrderBookUpdateEvent(self):
-        return self.__orderBookUpdateEvent
+        today_bars = {}
+
+        for identifier in self.__identifiers:
+            try:
+                from mootdx import quotes
+                df = quotes.Quotes(identifier)
+                today_bars[identifier] = get_bar_list(df, self.__frequency, None)
+            except Exception as e:
+                logger.error(e)
+
+        self.__fill_bars(today_bars)
+
+    def __fill_bars(self, bars_dict):
+        for index, value in enumerate(bars_dict[self.__identifiers[0]]):
+            bar_dict = dict()
+            for identifier in self.__identifiers:
+                if bars_dict[identifier][index] is not None:
+                    bar_dict[identifier] = bars_dict[identifier][index]
+
+            if len(bar_dict):
+                bars = bar.Bars(bar_dict)
+                self.__queue.put((LiveFeedThread.ON_BARS, bars))
+
+    def _fill_history_bars(self, replay_days):
+        now = datetime.datetime.now()
+        for day in get_trading_days(now, replay_days):
+            bars_dict = {}
+
+            for identifier in self.__identifiers:
+                df = ts.get_tick_data(identifier, date=day.date().isoformat())
+                bars_dict[identifier] = get_bar_list(df, self.__frequency, day)
+
+            self.__fill_bars(bars_dict)
+
+    def __fill_today_history_bars(self, replayDays):
+        if replayDays < 0:  # only allow -1 and >=0 integer value
+            replayDays = -1
+        if replayDays == -1:
+            pass
+        elif replayDays == 0:  # replay today's quotation
+            self._fill_today_bars()
+        else:
+            self._fill_history_bars(replayDays)
+            self._fill_today_bars()
+
+
+if __name__ == '__main__':
+    liveFeed = LiveFeed(['000581'], Frequency.MINUTE, dataseries.DEFAULT_MAX_LEN, 2)
+    liveFeed.start()
+
+    while not liveFeed.eof():
+        bars = liveFeed.getNextBars()
+        if bars is not None:
+            print(bars['000581'].getHigh(), bars['000581'].getDateTime())

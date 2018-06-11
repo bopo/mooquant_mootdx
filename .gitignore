@@ -3,6 +3,7 @@ MANIFEST
 /docs/_build
 /site
 .tox
+.eggs
 .idea
 .cache
 .coverage

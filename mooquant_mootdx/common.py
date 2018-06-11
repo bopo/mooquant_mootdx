@@ -19,14 +19,18 @@
 """
 .. moduleauthor:: Mikko Gozalo <mikgozalo@gmail.com>
 """
+import datetime
 
 import mooquant.logger
-from mooquant import broker
+from mooquant.utils import dt
+
+from mootdx import quotes, reader
 
 logger = mooquant.logger.getLogger("mootdx")
 
 
-from mootdx import quotes, reader
+def utcnow():
+    return dt.as_utc(datetime.datetime.utcnow())
 
 
 class MooTdxError(Exception):
@@ -53,4 +57,3 @@ def get_reader(currency_pair):
         result = client.daily(symbol='600036')
     except BaseException:
         raise MooTdxError('Problem fetching readers')
-

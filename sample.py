@@ -1,81 +1,97 @@
-from mooquant import strategy
+# coding=utf-8
+
+from mooquant import plotter, strategy
+from mooquant.analyzer import sharpe
 from mooquant.bar import Frequency
-from mooquant.technical import cross, ma
-from mooquant_mootdx import broker, livefeed
+from mooquant.barfeed.csvfeed import GenericBarFeed
+from mooquant.technical import ma
+from mooquant.tools import mootdx
 
 
-class Strategy(strategy.BaseStrategy):
-    def __init__(self, feed, brk):
-        strategy.BaseStrategy.__init__(self, feed, brk)
-        smaPeriod = 20
-        self.__instrument = "btcusd"
-        self.__prices = feed[self.__instrument].getCloseDataSeries()
-        self.__sma = ma.SMA(self.__prices, smaPeriod)
-        self.__bid = None
-        self.__ask = None
+class Strategy(strategy.BacktestingStrategy):
+    def __init__(self, feed, instrument):
+        super(Strategy, self).__init__(feed)
+
         self.__position = None
-        self.__posSize = 0.05
-
-        # Subscribe to order book update events to get bid/ask prices to trade.
-        feed.getOrderBookUpdateEvent().subscribe(self.__onOrderBookUpdate)
-
-    def __onOrderBookUpdate(self, orderBookUpdate):
-        bid = orderBookUpdate['bid']
-        ask = orderBookUpdate['ask']
-
-        if bid != self.__bid or ask != self.__ask:
-            self.__bid = bid
-            self.__ask = ask
-            self.info(
-                "Order book updated. Best bid: %s. Best ask: %s" %
-                (self.__bid, self.__ask))
+        self.__sma = ma.SMA(feed[instrument].getCloseDataSeries(), 150)
+        self.__instrument = instrument
+        self.getBroker()
 
     def onEnterOk(self, position):
-        self.info(
-            "Position opened at %s" %
-            (position.getEntryOrder().getExecutionInfo().getPrice()))
+        execInfo = position.getEntryOrder().getExecutionInfo()
+        self.info("买入 %.2f" % (execInfo.getPrice()))
 
     def onEnterCanceled(self, position):
-        self.info("Position entry canceled")
         self.__position = None
 
     def onExitOk(self, position):
+        execInfo = position.getExitOrder().getExecutionInfo()
+        self.info("卖出 %.2f" % (execInfo.getPrice()))
         self.__position = None
-        self.info(
-            "Position closed at %s" %
-            (position.getExitOrder().getExecutionInfo().getPrice()))
 
     def onExitCanceled(self, position):
         # If the exit was canceled, re-submit it.
-        self.__position.exitLimit(self.__bid)
+        self.__position.exitMarket()
+
+    def getSMA(self):
+        return self.__sma
 
     def onBars(self, bars):
-        bar = bars[self.__instrument]
-        self.info("Price: %s. Volume: %s." % (bar.getClose(), bar.getVolume()))
-
-        # Wait until we get the current bid/ask prices.
-        if self.__ask is None:
+        # 每一个数据都会抵达这里，就像becktest中的next
+        # Wait for enough bars to be available to calculate a SMA.
+        if self.__sma[-1] is None:
             return
 
-        # If a position was not opened, check if we should enter a long
-        # position.
+        # bar.getTyoicalPrice = (bar.getHigh() + bar.getLow() + bar.getClose())/ 3.0
+        bar = bars[self.__instrument]
+
+        # If a position was not opened, check if we should enter a long position.
         if self.__position is None:
-            if cross.cross_above(self.__prices, self.__sma) > 0:
-                self.info("Entry signal. Buy at %s" % (self.__ask))
-                self.__position = self.enterLongLimit(
-                    self.__instrument, self.__ask, self.__posSize, True)
-        # Check if we have to close the position.
-        elif not self.__position.exitActive() and cross.cross_below(self.__prices, self.__sma) > 0:
-            self.info("Exit signal. Sell at %s" % (self.__bid))
-            self.__position.exitLimit(self.__bid)
+            if bar.getPrice() > self.__sma[-1]:
+                # 开多头.
+                self.__position = self.enterLong(self.__instrument, 100, True)
+
+        # 平掉多头头寸.
+        elif bar.getPrice() < self.__sma[-1] and not self.__position.exitActive():
+            self.__position.exitMarket()
 
 
 def main():
-    barFeed = livefeed.LiveFeed(['btcusd'], 2)
-    brk = broker.PaperTradingBroker(1000, barFeed)
-    strat = Strategy(barFeed, brk)
+    instruments = ["600036"]
+    feeds = mootdx.build_feed(instruments, 2003, 2018, "histdata/mootdx")
+
+    # feeds = csvfeed.Feed("Date", "%Y-%m-%d")
+    # feeds.setDateRange(datetime.datetime(2006, 1, 1), datetime.datetime(2012, 12, 31))
+    # feeds.addValuesFromCSV("tushare/600016-2012-tushare.csv")
+
+    # feeds = GenericBarFeed(Frequency.DAY, None, None)
+    # # feeds = tusharefeed.Feed(Frequency.DAY)
+    # feeds.addBarsFromCSV("600016", "tushare/600016-2006-tushare.csv")
+    # feeds.addBarsFromCSV("600016", "tushare/600016-2007-tushare.csv")
+    # feeds.addBarsFromCSV("600016", "tushare/600016-2008-tushare.csv")
+    # feeds.addBarsFromCSV("600016", "tushare/600016-2009-tushare.csv")
+    # feeds.addBarsFromCSV("600016", "tushare/600016-2010-tushare.csv")
+    # feeds.addBarsFromCSV("600016", "tushare/600016-2011-tushare.csv")
+    # feeds.addBarsFromCSV("600016", "tushare/600016-2012-tushare.csv")
+
+    # 3.实例化策略
+    strat = Strategy(feeds, instruments[0])
+
+    # 4.设置指标和绘图
+    ratio = sharpe.SharpeRatio()
+    strat.attachAnalyzer(ratio)
+    # plter = plotter.StrategyPlotter(strat)
+
+    # coloredlogs.install(level='DEBUG')
+
+    # 5.运行策略
     strat.run()
+    strat.info("最终收益: %.2f" % strat.getResult())
+
+    # 6.输出夏普率、绘图
+    strat.info("夏普比率: " + str(ratio.getSharpeRatio(0)))
+    # plter.plot()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
