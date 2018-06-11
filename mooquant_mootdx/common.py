@@ -23,7 +23,6 @@ import datetime
 
 import mooquant.logger
 from mooquant.utils import dt
-
 from mootdx import quotes, reader
 
 logger = mooquant.logger.getLogger("mootdx")

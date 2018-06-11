@@ -25,12 +25,12 @@ import threading
 import time
 from collections import deque
 
-import mooquant.logger
 import pytz
+
+import mooquant.logger
 from mooquant import bar, barfeed, dataseries, resamplebase
 from mooquant.bar import Frequency
 from mooquant.utils import dt
-
 from mooquant_mootdx.common import utcnow
 
 logger = mooquant.logger.getLogger("mootdx")
