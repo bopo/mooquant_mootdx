@@ -1,16 +1,12 @@
-# coding=utf-8
-
-from mooquant import plotter, strategy
+from mooquant import strategy
 from mooquant.analyzer import sharpe
-from mooquant.bar import Frequency
-from mooquant.barfeed.csvfeed import GenericBarFeed
 from mooquant.technical import ma
-from mooquant.tools import mootdx
+from mooquant_mootdx.tools import build_feed
 
 
-class Strategy(strategy.BacktestingStrategy):
+class MyStrategy(strategy.BacktestingStrategy):
     def __init__(self, feed, instrument):
-        super(Strategy, self).__init__(feed)
+        super().__init__(feed)
 
         self.__position = None
         self.__sma = ma.SMA(feed[instrument].getCloseDataSeries(), 150)
@@ -45,7 +41,8 @@ class Strategy(strategy.BacktestingStrategy):
         # bar.getTyoicalPrice = (bar.getHigh() + bar.getLow() + bar.getClose())/ 3.0
         bar = bars[self.__instrument]
 
-        # If a position was not opened, check if we should enter a long position.
+        # If a position was not opened, check if we should enter a long
+        # position.
         if self.__position is None:
             if bar.getPrice() > self.__sma[-1]:
                 # 开多头.
@@ -58,24 +55,11 @@ class Strategy(strategy.BacktestingStrategy):
 
 def main():
     instruments = ["600036"]
-    feeds = mootdx.build_feed(instruments, 2003, 2018, "histdata/mootdx")
 
-    # feeds = csvfeed.Feed("Date", "%Y-%m-%d")
-    # feeds.setDateRange(datetime.datetime(2006, 1, 1), datetime.datetime(2012, 12, 31))
-    # feeds.addValuesFromCSV("tushare/600016-2012-tushare.csv")
-
-    # feeds = GenericBarFeed(Frequency.DAY, None, None)
-    # # feeds = tusharefeed.Feed(Frequency.DAY)
-    # feeds.addBarsFromCSV("600016", "tushare/600016-2006-tushare.csv")
-    # feeds.addBarsFromCSV("600016", "tushare/600016-2007-tushare.csv")
-    # feeds.addBarsFromCSV("600016", "tushare/600016-2008-tushare.csv")
-    # feeds.addBarsFromCSV("600016", "tushare/600016-2009-tushare.csv")
-    # feeds.addBarsFromCSV("600016", "tushare/600016-2010-tushare.csv")
-    # feeds.addBarsFromCSV("600016", "tushare/600016-2011-tushare.csv")
-    # feeds.addBarsFromCSV("600016", "tushare/600016-2012-tushare.csv")
+    feeds = build_feed(instruments, 2003, 2018, "histdata")
 
     # 3.实例化策略
-    strat = Strategy(feeds, instruments[0])
+    strat = MyStrategy(feeds, instruments[0])
 
     # 4.设置指标和绘图
     ratio = sharpe.SharpeRatio()

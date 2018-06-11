@@ -21,22 +21,20 @@
 
 import datetime
 import os
+from pathlib import Path
 
 import mooquant.logger
 from mooquant import bar
-
-from mooquant_mootdx import barfeed
-from mootdx import reader
-
-
-def download_tdx(tdxdir, instrument, begin, end):
-    ret = reader.Reader(tdxdir)
-    res = ret.daily(instrument)
-
-    return res[begin:end]
+from mooquant.barfeed import mootdxfeed
+from mooquant.utils import csvutils
+from mootdx import quotes
 
 
-def download_daily_bars(tdxdir, instrument, year, csvFile):
+def download_bars(instrument, begin, end):
+    quote = quotes.Quotes()
+    return quote.k(instrument, begin, end)
+
+def download_daily_bars(instrument, year, csvFile):
     """Download daily bars from Google Finance for a given year.
 
     :param instrument: Instrument identifier.
@@ -49,16 +47,16 @@ def download_daily_bars(tdxdir, instrument, year, csvFile):
 
     begin = datetime.date(year, 1, 1).strftime('%Y-%m-%d')
     end = datetime.date(year, 12, 31).strftime('%Y-%m-%d')
-    bars = download_tdx(tdxdir, instrument, begin, end)
+    bars = download_bars(instrument, begin, end)
 
     if len(bars) > 0:
         bars = bars.drop(['code'], axis=1)
-        bars.columns = ['Date', 'Open', 'Close', 'High', 'Low', 'Volume']
+        bars.columns = ['Open', 'Close', 'High', 'Low', 'Volume', 'Amount', 'Date']
         bars.to_csv(csvFile, encoding='utf-8', index=False)
 
 
-def build_feed(tdxdir, instruments, fromYear, toYear, storage, frequency=bar.Frequency.DAY, skipErrors=False):
-    """Build and load a :class:`mooquant.barfeed.tusharefeed.Feed` using CSV files downloaded from Google Finance.
+def build_feed(instruments, fromYear, toYear, storage, frequency=bar.Frequency.DAY, timezone=None, skipErrors=False):
+    """Build and load a :class:`mooquant.barfeed.mootdxfeed.Feed` using CSV files downloaded from Google Finance.
     CSV files are downloaded if they haven't been downloaded before.
 
     :param instruments: Instrument identifiers.
@@ -70,13 +68,15 @@ def build_feed(tdxdir, instruments, fromYear, toYear, storage, frequency=bar.Fre
     :param storage: The path were the files will be loaded from, or downloaded to.
     :type storage: string.
     :param frequency: The frequency of the bars. Only **mooquant.bar.Frequency.DAY** is currently supported.
+    :param timezone: The default timezone to use to localize bars. Check :mod:`mooquant.marketsession`.
+    :type timezone: A pytz timezone.
     :param skipErrors: True to keep on loading/downloading files in case of errors.
     :type skipErrors: boolean.
-    :rtype: :class:`mooquant.barfeed.tusharefeed.Feed`.
+    :rtype: :class:`mooquant.barfeed.mootdxfeed.Feed`.
     """
 
-    logger = mooquant.logger.getLogger("tools_tushare")
-    ret = barfeed.Feed(frequency)
+    logger = mooquant.logger.getLogger("mootdx")
+    ret = mootdxfeed.Feed(frequency, timezone)
 
     if not os.path.exists(storage):
         logger.info("Creating {dirname} directory".format(dirname=storage))
@@ -84,12 +84,9 @@ def build_feed(tdxdir, instruments, fromYear, toYear, storage, frequency=bar.Fre
 
     for year in range(fromYear, toYear + 1):
         for instrument in instruments:
-            fileName = os.path.join(
-                storage,
-                "{instrument}-{year}-tushare.csv".format(
-                    instrument=instrument, year=year))
-
-            print(fileName)
+            filePath = Path(storage) 
+            fileName = filePath / "{instrument}-{year}-mootdx.csv".format(
+                    instrument=instrument, year=year)
 
             if not os.path.exists(fileName):
                 logger.info(
@@ -97,7 +94,7 @@ def build_feed(tdxdir, instruments, fromYear, toYear, storage, frequency=bar.Fre
                         instrument=instrument, year=year, filename=fileName))
                 try:
                     if frequency == bar.Frequency.DAY:
-                        download_daily_bars(tdxdir, instrument, year, fileName)
+                        download_daily_bars(instrument, year, fileName)
                     else:
                         raise Exception("Invalid frequency")
                 except Exception as e:
